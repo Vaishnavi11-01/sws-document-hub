@@ -10,6 +10,19 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+if (process.env.MONGO_URI) {
+  mongoose
+    .connect(process.env.MONGO_URI)
+    .then(() => {
+      console.log("MongoDB Connected");
+    })
+    .catch((err) => {
+      console.log("MongoDB connection error:", err.message);
+    });
+} else {
+  console.warn("MONGO_URI is not set. MongoDB connection skipped.");
+}
+
 app.get("/", (req, res) => {
   res.send("SWS Document Hub API Running");
 });
