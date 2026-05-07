@@ -2,6 +2,8 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const http = require("http");
+const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
 const Document = require("./models/Document");
@@ -9,6 +11,12 @@ const Document = require("./models/Document");
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+  },
+});
 
 const uploadDir = path.join(__dirname, "uploads");
 const storage = multer.diskStorage({
@@ -44,6 +52,28 @@ if (process.env.MONGO_URI) {
   console.warn("MONGO_URI is not set. MongoDB connection skipped.");
 }
 
+const processDocument = async (document) => {
+  let progress = 0;
+
+  const interval = setInterval(async () => {
+    progress += 20;
+
+    if (progress >= 100) {
+      clearInterval(interval);
+      const updatedDoc = await Document.findByIdAndUpdate(
+        document._id,
+        { status: "processed", processingProgress: 100 },
+        { new: true }
+      );
+      io.emit("document-processed", updatedDoc);
+      return;
+    }
+
+    await Document.findByIdAndUpdate(document._id, { processingProgress: progress });
+    io.emit("processing-progress", { id: document._id, progress });
+  }, 500);
+};
+
 app.get("/", (req, res) => {
   res.send("SWS Document Hub API Running");
 });
@@ -73,6 +103,9 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
       uploadedAt: new Date(),
     });
 
+    io.emit("document-uploaded", document);
+    processDocument(document);
+
     res.status(201).json(document);
   } catch (error) {
     res.status(500).json({ error: "Upload failed." });
@@ -92,8 +125,16 @@ app.get("/api/documents/:id/download", async (req, res) => {
   }
 });
 
+io.on("connection", (socket) => {
+  console.log("User Connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("User Disconnected", socket.id);
+  });
+});
+
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
