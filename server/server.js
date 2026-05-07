@@ -52,6 +52,12 @@ if (process.env.MONGO_URI) {
   console.warn("MONGO_URI is not set. MongoDB connection skipped.");
 }
 
+const createNotification = async ({ message, type = "info" }) => {
+  const notification = await Notification.create({ message, type });
+  io.emit("notification", notification);
+  return notification;
+};
+
 const processDocument = async (document) => {
   let progress = 0;
 
@@ -66,6 +72,7 @@ const processDocument = async (document) => {
         { new: true }
       );
       io.emit("document-processed", updatedDoc);
+      await createNotification({ message: `Processing complete: ${document.name}`, type: "success" });
       return;
     }
 
@@ -90,6 +97,7 @@ app.get("/api/documents", async (req, res) => {
 app.post("/api/documents", upload.single("document"), async (req, res) => {
   try {
     if (!req.file) {
+      await createNotification({ message: "Upload failed: invalid file type.", type: "error" });
       return res.status(400).json({ error: "Please upload a PDF file." });
     }
 
@@ -108,6 +116,7 @@ app.post("/api/documents", upload.single("document"), async (req, res) => {
 
     res.status(201).json(document);
   } catch (error) {
+    await createNotification({ message: "Upload failed due to server error.", type: "error" });
     res.status(500).json({ error: "Upload failed." });
   }
 });
@@ -122,6 +131,41 @@ app.get("/api/documents/:id/download", async (req, res) => {
     res.download(path.join(uploadDir, document.filename), document.originalName);
   } catch (error) {
     res.status(500).json({ error: "Download failed." });
+  }
+});
+
+app.get("/api/notifications", async (req, res) => {
+  try {
+    const notifications = await Notification.find().sort({ createdAt: -1 });
+    const unreadCount = await Notification.countDocuments({ read: false });
+    res.json({ notifications, unreadCount });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to load notifications." });
+  }
+});
+
+app.post("/api/notifications/:id/read", async (req, res) => {
+  try {
+    const notification = await Notification.findByIdAndUpdate(
+      req.params.id,
+      { read: true },
+      { new: true }
+    );
+    if (!notification) {
+      return res.status(404).json({ error: "Notification not found." });
+    }
+    res.json(notification);
+  } catch (error) {
+    res.status(500).json({ error: "Unable to update notification." });
+  }
+});
+
+app.post("/api/notifications/read-all", async (req, res) => {
+  try {
+    await Notification.updateMany({ read: false }, { read: true });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "Unable to mark notifications as read." });
   }
 });
 
