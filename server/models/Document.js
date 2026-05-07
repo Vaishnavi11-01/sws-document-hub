@@ -9,7 +9,6 @@ const documentSchema = new mongoose.Schema(
     status: { type: String, enum: ["processing", "processed"], default: "processing" },
     processingProgress: { type: Number, default: 0 },
     uploadedAt: { type: Date, default: Date.now },
-    batchId: { type: String, default: null },
   },
   { timestamps: true }
 );
